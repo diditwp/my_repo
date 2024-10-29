@@ -7,6 +7,13 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import math
+import random
+import tensorflow as tf
+
+os.environ['PYTHONHASHSEED'] = '0'
+random.seed(9)
+np.random.seed(9)
+tf.random.set_seed(9)
 
 PATH = r"D:\Didit Wahyu Pradipta\Kerjaan\SESMUBI_DWP\Final Project\Pseudo Code"
 
@@ -49,7 +56,7 @@ model.compile(optimizer='adam', loss='mse')
 from tensorflow.keras.callbacks import EarlyStopping
 
 early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-model.fit(X_train, y_train, epochs=55, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=1)
+model.fit(X_train, y_train, epochs=56, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=1)
 
 ##########################################################################
 
@@ -101,7 +108,7 @@ plt.show()
 ##########################################################################
 
 # Forecast future values until December 2024
-forecast_steps = 15  # Forecasting for 3 months (October, November, December 2024)
+forecast_steps = 3  # Forecasting for 3 months (October, November, December 2024)
 last_sequence = data_scaled[-sequence_length:]
 future_predictions = []
 
@@ -170,7 +177,6 @@ df = df.dropna(subset=['yoy'])
 for lag in range(1, 13):
     df[f'lag_{lag}'] = df['yoy'].shift(lag)
 
-
 # Prepare the data for training and testing
 X = df.drop(columns=['yoy', 'Year', 'Month'])
 y = df['yoy']
@@ -188,30 +194,31 @@ model = XGBRegressor(objective='reg:squarederror', n_estimators=150, learning_ra
 model.fit(X_train_scaled, y_train)
 
 # Make predictions
-y_pred = model.predict(X_test_scaled)
+y_train_pred = model.predict(X_train_scaled)
+y_test_pred = model.predict(X_test_scaled)
 
-# Calculate performance metrics
-rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
+# Inverse transform to get actual values for predictions (note: y values don't need to be inverse transformed)
+y_train_pred_actual = y_train_pred.reshape(-1, 1)
+y_test_pred_actual = y_test_pred.reshape(-1, 1)
 
-# Store performance metrics and display as a table
+# Calculate performance metrics for training set
+train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred_actual))
+train_mae = mean_absolute_error(y_train, y_train_pred_actual)
+train_r2 = r2_score(y_train, y_train_pred_actual)
+
+# Calculate performance metrics for testing set
+test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred_actual))
+test_mae = mean_absolute_error(y_test, y_test_pred_actual)
+test_r2 = r2_score(y_test, y_test_pred_actual)
+
+# Store performance metrics in a DataFrame
 performance_metrics = pd.DataFrame({
     'Metric': ['RMSE', 'MAE', 'R2 Score'],
-    'Value': [rmse, mae, r2]
+    'Train': [train_rmse, train_mae, train_r2],
+    'Test': [test_rmse, test_mae, test_r2]
 })
 
 print(performance_metrics)
-
-# Plot the results
-plt.figure(figsize=(14, 6))
-plt.plot(y_test.index, y_test, label='Actual YoY Inflation')
-plt.plot(y_test.index, y_pred, label='Predicted YoY Inflation', linestyle='--')
-plt.title('Year-on-Year Inflation Forecast vs Actual (Test Set)')
-plt.xlabel('Date')
-plt.ylabel('Inflation (YoY)')
-plt.legend()
-plt.show()
 
 # Forecast future values until December 2024
 future_months = pd.date_range(start=df.index[-1] + pd.DateOffset(months=1), end='2024-12-01', freq='MS')
@@ -228,52 +235,267 @@ for _ in range(len(future_months)):
 future_df = pd.DataFrame({'Date': future_months, 'Forecasted YoY Inflation': future_predictions})
 future_df.set_index('Date', inplace=True)
 
-# Plot the forecast
+# Print the forecasted values
+print(future_df)
+
+# Plot the results
 plt.figure(figsize=(14, 6))
-plt.plot(df.index, df['yoy'], label='Historical YoY Inflation')
-plt.plot(future_df.index, future_df['Forecasted YoY Inflation'], label='Forecasted YoY Inflation', linestyle='--')
-plt.title('Year-on-Year Inflation Forecast until December 2024')
+
+# Plot train data actual and prediction
+plt.plot(X_train.index, y_train, label='Train Data Actual')
+plt.plot(X_train.index, y_train_pred, label='Train Data Prediction', linestyle='--')
+
+# Plot test data actual and prediction
+plt.plot(X_test.index, y_test, label='Test Data Actual')
+plt.plot(X_test.index, y_test_pred, label='Test Data Prediction', linestyle='--')
+
+# Plot future forecasted values
+plt.plot(future_df.index, future_df['Forecasted YoY Inflation'], label='Forecasted Inflation (Oct-Dec 2024)', linestyle='--')
+
+plt.title('Inflation Forecast - Train, Test, and Future Predictions')
 plt.xlabel('Date')
 plt.ylabel('Inflation (YoY)')
 plt.legend()
 plt.show()
 
 
-####### FB Prophet #############
+########## SVM Regression ############
 
-from prophet import Prophet
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.svm import SVR
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split, GridSearchCV
 
+PATH = r"D:\Didit Wahyu Pradipta\Kerjaan\SESMUBI_DWP\Final Project\Pseudo Code"
+
+########## SVM Regression with Hyperparameter Tuning ############
+
+# Load and prepare data
 df = pd.read_excel(os.path.join(PATH, 'kalsel_infl.xlsx'))
 
 df['Date'] = pd.to_datetime(df['Year'].astype(str) + '-' + df['Month'], format='%Y-%b')
 df.set_index('Date', inplace=True)  # Set Date as index
 df = df.dropna(subset=['yoy'])
 
-# Prepare data for Prophet
-prophet_df = df.reset_index()[['Date', 'yoy']]
-prophet_df.rename(columns={'Date': 'ds', 'yoy': 'y'}, inplace=True)
+# Prepare features and target
+X = df.index.factorize()[0].reshape(-1, 1)  # Use date as feature by encoding it as an integer
+y = df['yoy'].values
 
-# Create and fit the Prophet model
-model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False, changepoint_prior_scale=0.05)
-model.fit(prophet_df)
+# Split the data into training and testing sets
+train_end_index = int(len(df) * 0.8)
+X_train, X_test = X[:train_end_index], X[train_end_index:]
+y_train, y_test = y[:train_end_index], y[train_end_index:]
 
-# Make future dataframe for forecasting
-future = model.make_future_dataframe(periods=12, freq='M')
-forecast = model.predict(future)
+# Scale the features
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-# Plot the forecast
-fig = model.plot(forecast)
-plt.title('Year-on-Year Inflation Forecast using FB Prophet')
+# Define the parameter grid for GridSearchCV
+param_grid = {
+    'C': [0.01, 0.1, 1, 10, 100],
+    'gamma': [0.001, 0.005, 0.01, 0.1, 1],
+    'epsilon': [0.01, 0.05, 0.1, 0.5],
+    'kernel': ['rbf', 'linear']
+}
+
+# Create GridSearchCV for hyperparameter tuning
+grid_search = GridSearchCV(SVR(), param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+grid_search.fit(X_train_scaled, y_train)
+
+# Get the best parameters and model
+print("Best parameters found: ", grid_search.best_params_)
+best_model = grid_search.best_estimator_
+
+# Train the model with the best parameters
+best_model.fit(X_train_scaled, y_train)
+
+# Make predictions
+y_train_pred = best_model.predict(X_train_scaled)
+y_test_pred = best_model.predict(X_test_scaled)
+
+# Calculate performance metrics for training set
+train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred))
+train_mae = mean_absolute_error(y_train, y_train_pred)
+train_r2 = r2_score(y_train, y_train_pred)
+
+# Calculate performance metrics for testing set
+test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
+test_mae = mean_absolute_error(y_test, y_test_pred)
+test_r2 = r2_score(y_test, y_test_pred)
+
+# Store performance metrics in a DataFrame
+performance_metrics = pd.DataFrame({
+    'Metric': ['RMSE', 'MAE', 'R2 Score'],
+    'Train': [train_rmse, train_mae, train_r2],
+    'Test': [test_rmse, test_mae, test_r2]
+})
+
+print(performance_metrics)
+
+# Forecast future values until December 2024
+future_dates = pd.date_range(start=df.index[-1] + pd.DateOffset(months=1), end='2024-12-31', freq='M')
+future_X = np.array(range(len(df), len(df) + len(future_dates))).reshape(-1, 1)
+future_X_scaled = scaler.transform(future_X)
+future_predictions = best_model.predict(future_X_scaled)
+
+# Create a DataFrame for future predictions
+future_df = pd.DataFrame({'Date': future_dates, 'Forecasted YoY Inflation': future_predictions})
+future_df.set_index('Date', inplace=True)
+
+# Plot the results
+plt.figure(figsize=(14, 6))
+
+# Plot train data actual and prediction
+plt.plot(df.index[:train_end_index], y_train, label='Train Data Actual')
+plt.plot(df.index[:train_end_index], y_train_pred, label='Train Data Prediction', linestyle='--')
+
+# Plot test data actual and prediction
+plt.plot(df.index[train_end_index:], y_test, label='Test Data Actual')
+plt.plot(df.index[train_end_index:], y_test_pred, label='Test Data Prediction', linestyle='--')
+
+# Plot future forecasted values
+plt.plot(future_df.index, future_df['Forecasted YoY Inflation'], label='Forecasted Inflation (Oct-Dec 2024)', linestyle='--')
+
+plt.title('Inflation Forecast - Train, Test, and Future Predictions using SVM with Hyperparameter Tuning')
 plt.xlabel('Date')
 plt.ylabel('Inflation (YoY)')
+plt.legend()
 plt.show()
 
-# Plot the forecast components
-fig2 = model.plot_components(forecast)
+# Display forecasted values for future periods
+print(future_df)
+
+##################### Random Forest ##################################
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import random
+
+# Set random seeds for reproducibility
+os.environ['PYTHONHASHSEED'] = '0'
+random.seed(9)
+np.random.seed(9)
+
+# Load and prepare data
+PATH = r"D:\Didit Wahyu Pradipta\Kerjaan\SESMUBI_DWP\Final Project\Pseudo Code"
+df = pd.read_excel(os.path.join(PATH, 'kalsel_infl.xlsx'))
+
+df['Date'] = pd.to_datetime(df['Year'].astype(str) + '-' + df['Month'], format='%Y-%b')
+df.set_index('Date', inplace=True)  # Set Date as index
+df = df.dropna(subset=['yoy'])
+
+# Scale the data
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaler.fit(df[['yoy']])
+data_scaled = scaler.transform(df[['yoy']])
+
+# Prepare data for RandomForest
+sequence_length = 48
+X, y = [], []
+for i in range(len(data_scaled) - sequence_length):
+    X.append(data_scaled[i:i + sequence_length].flatten())
+    y.append(data_scaled[i + sequence_length])
+
+X, y = np.array(X), np.array(y).flatten()
+
+# Split the data into training and testing sets
+train_size = int(0.8 * len(X))
+X_train, X_test = X[:train_size], X[train_size:]
+y_train, y_test = y[:train_size], y[train_size:]
+
+# Create and train the RandomForest model
+rf_model = RandomForestRegressor(n_estimators=100, random_state=9)
+rf_model.fit(X_train, y_train)
+
+# Make predictions for the training and testing sets
+y_train_pred = rf_model.predict(X_train).reshape(-1, 1)
+y_test_pred = rf_model.predict(X_test).reshape(-1, 1)
+
+# Inverse transform to get actual values
+y_train_actual = scaler.inverse_transform(y_train.reshape(-1, 1))
+y_train_pred_actual = scaler.inverse_transform(y_train_pred)
+y_test_actual = scaler.inverse_transform(y_test.reshape(-1, 1))
+y_test_pred_actual = scaler.inverse_transform(y_test_pred)
+
+# Create DataFrame for plotting
+df_train = df.iloc[sequence_length:sequence_length + len(y_train_actual)].copy()
+df_test = df.iloc[sequence_length + len(y_train_actual):].copy()
+
+# Calculate performance metrics for training set
+train_rmse = np.sqrt(mean_squared_error(y_train_actual, y_train_pred_actual))
+train_mae = mean_absolute_error(y_train_actual, y_train_pred_actual)
+train_r2 = r2_score(y_train_actual, y_train_pred_actual)
+
+# Calculate performance metrics for testing set
+test_rmse = np.sqrt(mean_squared_error(y_test_actual, y_test_pred_actual))
+test_mae = mean_absolute_error(y_test_actual, y_test_pred_actual)
+test_r2 = r2_score(y_test_actual, y_test_pred_actual)
+
+# Store performance metrics in a DataFrame
+performance_metrics = pd.DataFrame({
+    'Metric': ['RMSE', 'MAE', 'R2 Score'],
+    'Train': [train_rmse, train_mae, train_r2],
+    'Test': [test_rmse, test_mae, test_r2]
+})
+
+print(performance_metrics)
+
+# Plot the results
+plt.figure(figsize=(14, 6))
+plt.plot(df_train.index, y_train_actual, label='Train Data Actual')
+plt.plot(df_train.index, y_train_pred_actual, label='Train Data Prediction', linestyle='--')
+plt.plot(df_test.index, y_test_actual, label='Test Data Actual')
+plt.plot(df_test.index, y_test_pred_actual, label='Test Data Prediction', linestyle='--')
+plt.title('Inflation Forecast - Train and Test Data using Random Forest')
+plt.xlabel('Date')
+plt.ylabel('Inflation (yoy)')
+plt.legend()
 plt.show()
 
-# Display forecasted values
-forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(12)
+##########################################################################
+
+# Forecast future values until December 2024
+forecast_steps = 3  # Forecasting for 3 months (October, November, December 2024)
+last_sequence = X_test[-1].reshape(1, -1)
+future_predictions = []
+
+for _ in range(forecast_steps):
+    next_pred = rf_model.predict(last_sequence)[0]
+    future_predictions.append(next_pred)
+    last_sequence = np.roll(last_sequence, -1)
+    last_sequence[0, -1] = next_pred
+
+# Inverse transform future predictions
+future_predictions_actual = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
+
+# Create a DataFrame for future predictions
+forecast_dates = pd.date_range(start='2024-10-01', periods=forecast_steps, freq='MS')
+forecast_df = pd.DataFrame({'Date': forecast_dates, 'Forecasted Inflation': future_predictions_actual.flatten()})
+
+print(forecast_df)
+
+# Plot the results
+plt.figure(figsize=(14, 6))
+plt.plot(df_train.index, y_train_actual, label='Train Data Actual')
+plt.plot(df_train.index, y_train_pred_actual, label='Train Data Prediction', linestyle='--')
+plt.plot(df_test.index, y_test_actual, label='Test Data Actual')
+plt.plot(df_test.index, y_test_pred_actual, label='Test Data Prediction', linestyle='--')
+plt.plot(forecast_df['Date'], forecast_df['Forecasted Inflation'], label='Forecasted Inflation (Oct-Dec 2024)', linestyle='--')
+plt.title('Inflation Forecast - Train, Test, and Future Predictions using Random Forest')
+plt.xlabel('Date')
+plt.ylabel('Inflation (yoy)')
+plt.legend()
+plt.show()
 
 
 ### LSTM Forecast Prices ###

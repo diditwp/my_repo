@@ -107,8 +107,11 @@ print('SD: ', np.std(bootstrapped_oct))
 
 # Forecast results for July
 arima_forecast = 3.271911
-LSTM = 2.673072
+LSTM = 2.558021
+XG_Boost = 3.819170
+Random_Forest = 2.440868
 historical_forecast = 4.5
+
 
 # Monte Carlo simulation function
 def monte_carlo_simulation(forecast, historical_distribution, n_simulations=10000):
@@ -123,18 +126,22 @@ def monte_carlo_simulation(forecast, historical_distribution, n_simulations=1000
 # Monte Carlo simulation for each forecast
 arima_prob = monte_carlo_simulation(arima_forecast, bootstrapped_oct)
 LSTM_prob = monte_carlo_simulation(LSTM, bootstrapped_oct)
+XG_Boost_prob = monte_carlo_simulation(XG_Boost, bootstrapped_oct)
+Random_Forest_prob = monte_carlo_simulation(Random_Forest, bootstrapped_oct)
 historical_prob = monte_carlo_simulation(historical_forecast, bootstrapped_oct)
 
 print(f"SARIMA Forecast Probability: {arima_prob}")
 print(f"LSTM Forecast Probability: {LSTM_prob}")
+print(f"XGBoost Forecast Probability: {XG_Boost_prob}")
+print(f"Random Forest Forecast Probability: {Random_Forest_prob}")
 print(f"Historical Forecast Probability: {historical_prob}")
 
 # Visualize the probabilities
-labels = ['SARIMA', 'LSTM', 'Historical']
-probabilities = [arima_prob, LSTM_prob, historical_prob]
+labels = ['SARIMA', 'LSTM', 'XGBoost', 'Random Forest','Historical']
+probabilities = [arima_prob, LSTM_prob, XG_Boost_prob, Random_Forest_prob, historical_prob]
 
 fig, ax = plt.subplots(figsize=(8, 5))
-ax.bar(labels, probabilities, color=['blue', 'green', 'red'])
+ax.bar(labels, probabilities, color=['blue', 'green', 'red', 'purple', 'yellow'])
 ax.set_ylabel('Probability of Accurate Forecast')
 ax.set_title('Comparison of Forecasting Methods for October')
 ax.set_ylim(0, max(probabilities) + 0.1)

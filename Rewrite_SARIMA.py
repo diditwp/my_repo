@@ -128,7 +128,7 @@ performance_metrics = pd.DataFrame({
 
 print(performance_metrics)
 
-# Step 6: Plot the results with 4 lines
+# Step 6: Plot the results with 5 lines
 plt.figure(figsize=(12, 6))
 
 # Plot train data actual and prediction
@@ -139,7 +139,10 @@ plt.plot(train_data.index, y_train_pred, label='Train Data Prediction', linestyl
 plt.plot(test_data.index, y_test_actual, label='Test Data Actual')
 plt.plot(test_data.index, test_predictions, label='Test Data Prediction', linestyle='--')
 
-plt.title('Inflation Forecast - Train and Test Data')
+# Plot forecasted values
+plt.plot(forecast_df['Date'], forecast_df['Forecasted Inflation'], label='Forecasted Inflation (Oct-Dec 2024)', linestyle='--')
+
+plt.title('Inflation Forecast - Train, Test, and Future Predictions')
 plt.xlabel('Date')
 plt.ylabel('Inflation (yoy)')
 plt.legend()
